@@ -1,0 +1,53 @@
+server:
+  port: 8081
+  error:
+    include-message: always
+    include-stacktrace: always
+    whitelabel:
+      enabled: true
+
+auth0:
+  domain: dev-zenpals.us.auth0.com
+
+spring:
+  main:
+    web-application-type: reactive
+    allow-bean-definition-overriding: true
+
+  data:
+    mongodb:
+      auto-index-creation: true
+      uri: mongodb+srv://palAdmins:palAdmins@cluster0.ekzfnvl.mongodb.net/zenpals%2Dauth%2Dservice?retryWrites=true&w=majority&appName=Cluster0
+      database: zenpals-auth-service
+
+  logging:
+    level:
+      root: INFO
+      org.springframework.web: DEBUG
+      com.zenpals.auth_service: DEBUG
+      org.springframework.security: DEBUG
+      org.springframework.security.web.server: DEBUG
+
+  security:
+    oauth2:
+      client:
+        registration:
+          auth0:
+            client-id: tuqAXhLaDdqPaoSmwtv6KQ7N9fa3BSWl
+            client-secret: vCF0Sa3wQCxmx0Yw75lwUNWmy6OnVKPIkC3spy227YMCB9dY-9OnISF8e71g-OgY
+#            redirect-uri: http://localhost:8081/login/oauth2/code/auth0
+            redirect-uri: http://localhost:3000/auth-service-callback
+            scopes:
+              openid
+              profile
+              email
+              offline_access
+            authorization-grant-type: authorization_code
+            client-name: Auth0
+        provider:
+          auth0:
+            issuer-uri: https://dev-zenpals.us.auth0.com/
+            authorization-uri: https://dev-zenpals.us.auth0.com/authorize
+            token-uri: https://dev-zenpals.us.auth0.com/oauth/token
+            user-info-uri: https://dev-zenpals.us.auth0.com/userinfo
+            user-name-attribute: sub
