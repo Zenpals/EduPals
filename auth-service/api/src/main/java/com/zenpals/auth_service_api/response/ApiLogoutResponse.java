@@ -10,4 +10,5 @@ import lombok.NoArgsConstructor;
 public class ApiLogoutResponse {
     private boolean success;
     private String message;
+    private String logout_uri;
 }

@@ -140,37 +140,43 @@ public class AuthServiceImpl implements AuthService {
                     }
                 })
                 .flatMap(tokenResponse -> {
-                    // Decode id_token and extract user ID (sub claim)
                     try {
                         DecodedJWT decodedIdToken = JWT.decode(tokenResponse.getId_token());
-                        DecodedJWT decodedAccessToken = JWT.decode(tokenResponse.getAccess_token());
-                        logger.info("The decoded idToken is as follows: {}",decodedIdToken);
-                        logger.info("The decoded  accessToken is as follows: {}",decodedAccessToken);
-                        String userId = decodedIdToken.getSubject(); // typically 'sub' claim
+                        String userId = decodedIdToken.getSubject();
 
                         if (userId == null || userId.isEmpty()) {
                             logger.warn("User ID (sub) claim not found in ID token");
                             return Mono.just(tokenResponse); // continue without saving token
                         }
 
-                        // Create refresh token document
-                        RefreshTokenDocument refreshTokenDocument = new RefreshTokenDocument();
-                        refreshTokenDocument.setId(userId);
-                        refreshTokenDocument.setRefreshToken(tokenResponse.getRefresh_token());
-//                        refreshTokenDocument.setExpiresAt(Date.from(Instant.now().plus(5, ChronoUnit.MINUTES)));
-                        refreshTokenDocument.setExpiresAt(Date.from(Instant.now().plusSeconds(2592000)));
-                        logger.info("The refresh Token Document is as follows : {}",refreshTokenDocument);
-//                        We don't send the refresh_token to the ui bubba!
+                        String newRefreshToken = tokenResponse.getRefresh_token();
                         tokenResponse.setRefresh_token(null);
-                        tokenResponse.setRefresh_token_identifier(userId);
-                        // Save to repository
-                        return refreshTokenRepository.save(refreshTokenDocument)
-                                .doOnSuccess(saved -> logger.info("Saved refresh token for userId: {}", userId))
-                                .thenReturn(tokenResponse);
-
-                    } catch (Exception e) {
+                        if (newRefreshToken != null && !newRefreshToken.isEmpty()) {
+                            // Fetch existing document or create new one
+                            return refreshTokenRepository.findById(userId)
+                                    .defaultIfEmpty(new RefreshTokenDocument())
+                                    .flatMap(existingDoc -> {
+                                        boolean isNewToken = !newRefreshToken.equals(existingDoc.getRefreshToken());
+                                        if (isNewToken) {
+                                            existingDoc.setId(userId);
+                                            existingDoc.setRefreshToken(newRefreshToken);
+                                            existingDoc.setExpiresAt(Date.from(Instant.now().plusSeconds(2592000)));
+                                            logger.info("Saving new refresh token for userId: {}", userId);
+                                            return refreshTokenRepository.save(existingDoc)
+                                                    .doOnSuccess(saved -> logger.info("Saved refresh token for userId: {}", userId))
+                                                    .thenReturn(tokenResponse);
+                                        } else {
+                                            logger.info("Refresh token unchanged for userId: {}, skipping save.", userId);
+                                            return Mono.just(tokenResponse);
+                                        }
+                                    });
+                        } else {
+                            logger.info("No new refresh token returned for userId: {}, skipping save.", userId);
+                            return Mono.just(tokenResponse);
+                        }
+                    }  catch (Exception e) {
                         logger.error("Error decoding ID token or saving refresh token", e);
-                        // Return tokenResponse anyway; don't fail entire flow due to this error
+                        // Return tokenResponse anyway; we'll not  fail entire flow due to this error This niharika will handle or i'll depends maybe we try saving the refreshtoken later in a new attempt.
                         return Mono.just(tokenResponse);
                     }
                 })
@@ -312,7 +318,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public Mono<ApiLogoutResponse> logout( ApiLogoutRequest request) {
-        String baseLogoutUrl = "https://" + domain + "v2/logout";
+        String baseLogoutUrl = "https://" + domain + "/v2/logout";
         String returnTo = request.getReturnToUrl() != null ? request.getReturnToUrl() : "https://www.google.com";
 
         String logoutUrl = UriComponentsBuilder
@@ -321,17 +327,17 @@ public class AuthServiceImpl implements AuthService {
                 .queryParam("returnTo", returnTo)
                 .build()
                 .toUriString();
-
+       logger.info("logout uri: {}",logoutUrl);
         // I will now Trigger a GET call to ensure it's accessible
         return webClient.get()
                 .uri(logoutUrl)
                 .retrieve()
                 .toBodilessEntity()
-                .map(response -> new ApiLogoutResponse(true, "User logged out successfully."))
+                .map(response -> new ApiLogoutResponse(true, "User logged out successfully.",logoutUrl))
                 .doOnSuccess(resp -> logger.info("Logout success: {}", resp))
                 .onErrorResume(ex -> {
                     logger.error("Logout failed: {}", ex.getMessage(), ex);
-                    return Mono.just(new ApiLogoutResponse(false, "Logout failed: " + ex.getMessage()));
+                    return Mono.just(new ApiLogoutResponse(false, "Logout failed: " + ex.getMessage(),""));
                 });
 
     }
